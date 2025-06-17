@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_FILE="$HOME/.nnconfig"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    cat <<EOF > "$CONFIG_FILE"
+# Default configuration for nn
+NOTE_DIR="\$HOME/home/notes"
+EDITOR="nvim"
+VIEW_NOTE_PROGRAM="glow"
+FZF_PREVIEW="glow -p -w 109 -s dark {}"
+EOF
+
+    echo "Created default config at $CONFIG_FILE"
+    echo "You can edit it to customize your note directory, editor, etc."
+fi
+
+# Load configuration
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
+
+function help() {
+        cat <<-EOF
+Manages notes.
+If called without a command, will create a fleeting note.
+
+Commands: 
+    open|-o         Opens notes on your editor
+    fleeting|-f     Creates a fleeting note
+    literature|-l   Creates a literature note
+    permanent|-p    Creates a permanent note
+    delete|-d       Deletes a note (also accepts -f, -l and -p to select notes, and you can use -n to search by name or -g to grep by a term)
+    edit|-e         Opens a note on your editor (also accepts -f, -l and -p to select notes, and you can use -n to search by name or -g to grep by a term)
+    sync|-s         Syncs the repository
+    get-note|-gn    Gets a note (also accepts -f, -l and -p to select notes, and you can use -n to search by name or -g to grep by a term)
+    help|-h         Help menu
+EOF
+    exit 0
+}
+
+function err() {
+    echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')]: $*" >&2
+}
+
+function get_input() {
+    read -r -p "$1" filename
+	echo "$filename"
+}
+
+function open_file() {
+    mkdir -p "$1"
+	cd "$1" || exit
+
+	timestamp="$(date +"%Y%m%d%H%M%S")"
+	{
+		echo "# $filename"
+		echo -en "\n"
+		echo -en "\n"
+		echo "References:"
+		echo "- "
+	} >>"$1/$timestamp $filename.md"
+
+	$EDITOR "$1/$timestamp $filename.md" 
+}
+
+function sync() {
+    COMMIT_MSG=$(get_input "Commit msg: ")
+    cd "$NOTE_DIR"
+    git add .
+    git commit -m "$COMMIT_MSG"
+    git push
+}
+
+function create_note() {
+    filename=$(get_input "Note title: ")
+    open_file "$NOTE_DIR/$1"
+}
+
+function create_index() {
+    index_name=$(get_input "Index name: ")
+    slipbox_directory="$NOTE_DIR/indexes"
+    mkdir -p "$slipbox_directory"
+
+    map_of_contents="$slipbox_directory/$index_name.md"
+    touch "$map_of_contents"
+
+	{
+		echo "# Map of Contents - $index_name"
+		echo -en "\n"
+        echo -en "1. "
+        echo -en "\n"
+	} >>"$map_of_contents"
+
+	$EDITOR "$map_of_contents" 
+}
+
+function open_notes() {
+    cd "$NOTE_DIR"
+	$EDITOR "$NOTE_DIR" 
+}
+
+function fuzzy_find_note_in_directory() {
+    final_label=${3:-""}
+    directory=$2
+    program=$1
+
+    exclude_args=()
+    for exclude_dir in "${EXCLUDE_DIRECTORIES[@]}"; do
+        exclude_args+=(-path "$directory/$exclude_dir" -prune -o)
+    done
+
+    index=$(find "$directory" \( "${exclude_args[@]}" -false \) -o -type f -print | fzf --preview "$FZF_PREVIEW")
+    if [[ -n "$index" ]]; then
+        $program "$index"
+        echo "$final_label"
+        exit 0
+    fi
+
+    echo "no note selected"
+}
+
+function find_note_by_name() {
+    directory=$NOTE_DIR
+    program=$1
+    note_name=$2
+    results=$(find "$directory" -iname "*$note_name*")
+    count=$(echo "$results" | wc -l)
+
+    if [ "$count" -eq 1 ]; then
+        "$program" "$results"
+    else
+        selected=$(echo "$results" | fzf --preview "$FZF_PREVIEW")
+
+        if [ -n "$selected" ]; then
+            "$program" "$selected"
+        else
+            echo "No file selected."
+        fi
+    fi
+}
+
+function grep_note() {
+    cd "$NOTE_DIR"
+    program=$1
+    grep_by=$2
+    results=$(rg -i -l "$grep_by")
+    count=$(echo "$results" | wc -l)
+
+    if [ "$count" -eq 1 ]; then
+        "$program" "$NOTE_DIR/$results"
+    else
+        selected=$(echo "$results" | fzf --preview "$FZF_PREVIEW")
+
+        if [ -n "$selected" ]; then
+            "$program" "$selected"
+        else
+            echo "No file selected."
+        fi
+    fi
+}
+
+function note_action() {
+    directory=$NOTE_DIR
+    note_name=""
+    grep_by=""
+    program=$1
+    shift 1
+    if [[ "$#" -gt 0 ]]; then
+        case $1 in
+            fleeting|-f)
+                directory="$NOTE_DIR/fleeting"
+                ;;
+            literature|-l)
+                directory="$NOTE_DIR/literature"
+                ;;
+            permanent|-p)
+                directory="$NOTE_DIR/permanent"
+                ;;
+            index|-i)
+                directory="$NOTE_DIR/indexes"
+                ;;
+            name|-n)
+                shift 1
+                note_name="$1"
+                ;;
+            grep|-g)
+                shift 1
+                grep_by="$1"
+                ;;
+        esac
+    fi
+
+    if [[ $note_name != "" ]]; then
+        find_note_by_name "$program" "$note_name"
+    elif [[ $grep_by != "" ]]; then
+        grep_note "$program" "$grep_by"
+    else
+        fuzzy_find_note_in_directory "$program" "$directory" 
+    fi
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        fleeting|-f)
+            create_note "fleeting"
+            shift 1
+            exit 0
+            ;;
+        literature|-l)
+            create_note "literature"
+            shift 1
+            exit 0
+            ;;
+        permanent|-p)
+            create_note "permanent"
+            shift 1
+            exit 0
+            ;;
+        index|-i)
+            create_index
+            shift 1
+            exit 0
+            ;;
+        open|-o)
+            open_notes
+            shift 1
+            exit 0
+            ;;
+        delete|-d)
+            shift 1
+            note_action "rm" "$@"
+            exit 0
+            ;;
+        get-note|-gn)
+            shift 1
+            note_action "$VIEW_NOTE_PROGRAM" "$@"
+            exit 0
+            ;;
+        edit|-e)
+            shift 1
+            note_action "$EDITOR" "$@"
+            exit 0
+            ;;
+        sync|-s)
+            sync 
+            exit 0
+            ;;
+        help|-h)
+            help
+            shift 1
+            exit 0
+            ;;
+        *) 
+            create_note "fleeting"
+            shift 1
+            exit 0
+            ;;
+    esac
+done
+
+create_note "fleeting"
