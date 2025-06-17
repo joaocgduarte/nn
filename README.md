@@ -22,8 +22,8 @@ A minimalist Bash script to manage your **fleeting**, **literature**, and **perm
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/nn.git
-cd note-manager
+git clone https://github.com/joaocgduarte/nn.git
+cd nn
 ```
 
 ### 2. Make It Executable
