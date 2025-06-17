@@ -2,12 +2,13 @@
 set -euo pipefail
 
 CONFIG_FILE="$HOME/.nnconfig"
+E=${VISUAL:-${EDITOR:-$(command -v nvim || command -v vim || command -v vi)}}
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     cat <<EOF > "$CONFIG_FILE"
 # Default configuration for nn
 NOTE_DIR="\$HOME/home/notes"
-EDITOR="nvim"
+E="$E"
 VIEW_NOTE_PROGRAM="glow"
 FZF_PREVIEW="glow -p -w 109 -s dark {}"
 EOF
@@ -61,7 +62,7 @@ function open_file() {
 		echo "- "
 	} >>"$1/$timestamp $filename.md"
 
-	$EDITOR "$1/$timestamp $filename.md" 
+	$E "$1/$timestamp $filename.md" 
 }
 
 function sync() {
@@ -92,12 +93,12 @@ function create_index() {
         echo -en "\n"
 	} >>"$map_of_contents"
 
-	$EDITOR "$map_of_contents" 
+	$E "$map_of_contents" 
 }
 
 function open_notes() {
     cd "$NOTE_DIR"
-	$EDITOR "$NOTE_DIR" 
+	$E "$NOTE_DIR" 
 }
 
 function fuzzy_find_note_in_directory() {
@@ -239,7 +240,7 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         edit|-e)
             shift 1
-            note_action "$EDITOR" "$@"
+            note_action "$E" "$@"
             exit 0
             ;;
         sync|-s)
